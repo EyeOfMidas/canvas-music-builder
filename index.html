@@ -1,0 +1,412 @@
+<html>
+<head>
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<style type="text/css">
+	html,body {
+		margin: 0;
+		padding: 0;
+	}
+	.header {
+		text-align: center;
+		height: 20%;
+		min-height: 110px;
+	}
+	.main {
+		width: 100%;
+		height: 80%;
+		display: flex;
+		flex-direction: row;
+	}
+
+	.sidebar {
+		width: 20%;
+		min-width: 140px;
+		height: 100%;
+		overflow-y: scroll;
+	}
+
+	.timeline-container {
+		width: 80%;
+		height: 100%;
+		overflow-x: scroll;
+	}
+
+	#sample-sidebar {
+		display: flex;
+		flex-direction: column;
+	}
+	button.sample {
+		max-width: 200px;
+		height: 40px;
+		margin: 0 auto;
+	}
+
+	#timeline {
+		height: 100%;
+		background-color: #a3a3a3;
+	}
+</style>
+</head>
+<body>
+	<div class="container">
+		<div class="header">
+			<h1>Keygen Loop Maker</h1>
+			<label for="loop-duration">Loop Duration (ms)</label><input id="loop-duration" name="loop-duration" value="8000" />
+			<label for="loop-steps">Loop Step (ms)</label><input id="loop-steps" name="loop-steps" value="125" />
+			<button id="start">Start Loop</button>
+			<button id="stop">Stop Loop</button>
+
+			<button id="demo">Demo</button>
+			<button id="reset">Reset</button>
+
+			<button id="export">Export</button>
+			<button id="import">Import</button>
+		</div>
+		<div class="main">
+			<div class="sidebar">
+				<div id="sample-sidebar"></div>
+			</div>
+			<div class="timeline-container">
+				<canvas id="timeline"></canvas>
+			</div>
+		</div>
+	</div>
+	<script type="text/javascript">
+		var playLoopId = 0;
+		var channelIds = [];
+		var loopDuration = 8000;
+		loopSteps = 125;
+
+		var loopStartTimestamp = 0;
+
+	//close enough script
+	//ls 8-Bit\ Kit\ Volume1/*.wav | xargs | sed -e 's/.wav /.wav",\n"/g'
+	var samples = [
+	"8-Bit Kit Volume1/Arcade Echo FX 001.wav",
+	"8-Bit Kit Volume1/Blip 001.wav",
+	"8-Bit Kit Volume1/Blip 002.wav",
+	"8-Bit Kit Volume1/Blip 003.wav",
+	"8-Bit Kit Volume1/Blip 004.wav",
+	"8-Bit Kit Volume1/Bouncer 001.wav",
+	"8-Bit Kit Volume1/Bouncer 002.wav",
+	"8-Bit Kit Volume1/Bouncer 003.wav",
+	"8-Bit Kit Volume1/Creature 001.wav",
+	"8-Bit Kit Volume1/Creature 002.wav",
+	"8-Bit Kit Volume1/Effect 001.wav",
+	"8-Bit Kit Volume1/Effect 002.wav",
+	"8-Bit Kit Volume1/Effect 003.wav",
+	"8-Bit Kit Volume1/Engine Bass 001.wav",
+	"8-Bit Kit Volume1/Jump 001.wav",
+	"8-Bit Kit Volume1/Jump 002.wav",
+	"8-Bit Kit Volume1/Jump 003.wav",
+	"8-Bit Kit Volume1/Jump 004.wav",
+	"8-Bit Kit Volume1/Kick 001.wav",
+	"8-Bit Kit Volume1/Kick 002.wav",
+	"8-Bit Kit Volume1/Lift Off FX 001.wav",
+	"8-Bit Kit Volume1/Lift Off FX 002.wav",
+	"8-Bit Kit Volume1/Lift Off FX 003.wav",
+	"8-Bit Kit Volume1/Lift Off FX 004.wav",
+	"8-Bit Kit Volume1/Machine Blip 001.wav",
+	"8-Bit Kit Volume1/Noise 001.wav",
+	"8-Bit Kit Volume1/Noise 002.wav",
+	"8-Bit Kit Volume1/Noise 003.wav",
+	"8-Bit Kit Volume1/Noise 004.wav",
+	"8-Bit Kit Volume1/Phat Retro Bass 001.wav",
+	"8-Bit Kit Volume1/Phat Retro Bass 002.wav",
+	"8-Bit Kit Volume1/Quick Bass 001.wav",
+	"8-Bit Kit Volume1/Quick Bass 002.wav",
+	"8-Bit Kit Volume1/Quick Bass 003.wav",
+	"8-Bit Kit Volume1/Red Alert FX 001.wav",
+	"8-Bit Kit Volume1/Robot Talk 001.wav",
+	"8-Bit Kit Volume1/Robot Talk 002.wav",
+	"8-Bit Kit Volume1/Robot Talk 003.wav",
+	"8-Bit Kit Volume1/Robot Talk 004.wav",
+	"8-Bit Kit Volume1/Snare 001.wav",
+	"8-Bit Kit Volume1/Snare 002.wav",
+	"8-Bit Kit Volume1/Snare 003.wav",
+	"8-Bit Kit Volume1/Snare 004.wav",
+	"8-Bit Kit Volume1/Stutter Blip 001.wav",
+	"8-Bit Kit Volume1/Synth 001.wav",
+	"8-Bit Kit Volume1/Zap FX 001.wav",
+	"8-Bit Kit Volume1/Zap FX 002.wav",
+	"8-Bit Kit Volume1/Zap FX 003.wav",
+	"8-Bit Kit Volume1/Zap FX 004.wav",
+	"8-Bit Kit Volume1/Zap FX 005.wav",
+	"8-Bit Kit Volume1/Zap FX 006.wav",
+	"8-Bit Kit Volume1/Zap FX 007.wav",
+	"8-Bit Kit Volume1/Zoom Down FX 001.wav",
+	];
+
+	var isHeld = {};
+
+	var bar = {};
+	var barNotes = [];
+	var lastPosition = 0;
+
+	var canvas = document.getElementById("timeline");
+	
+	var context = canvas.getContext("2d");
+
+	function keepplaying(isHeld, audio) {
+		if(isHeld) {
+			audio.currentTime = 0;
+			audio.play();
+		}
+	}
+
+	function added(soundName) {
+		if(playLoopId == 0) {
+			return;
+		}
+		var timeSlot = Math.floor((new Date().getTime() - loopStartTimestamp) / loopSteps);
+		if(bar[timeSlot] == null) {
+			bar[timeSlot] = [];
+		}	
+		if(barNotes.indexOf(soundName) == -1) {
+			barNotes.push(soundName);
+		}
+		bar[timeSlot].push(barNotes.indexOf(soundName));
+	}
+
+	function pressed(audio) {
+		if(audio.currentTime > 0) {
+			audio.currentTime = 0;
+		}
+		audio.play();
+	}
+
+	document.addEventListener("DOMContentLoaded", function(event) {
+		for(let index in samples) {
+			let soundName = samples[index];
+			isHeld[soundName] = false;
+			let audio = document.createElement("audio");
+			audio.src = soundName;
+			audio.preload = "auto";
+			audio.id = "audio-" + soundName;
+			audio.addEventListener("ended", function(event) {
+				keepplaying(isHeld[soundName], audio);
+			});
+
+			let button = document.createElement("button");
+			button.id = "button-" + soundName;
+			button.innerHTML = soundName;
+			button.className = "sample";
+			button.addEventListener("mousedown", function(event) {
+				isHeld[soundName] = true;
+				pressed(audio);		
+				added(soundName);
+			});
+			button.addEventListener("mouseup", function(event) {
+				isHeld[soundName] = false;
+			});
+			button.addEventListener("mouseout", function(event) {
+				isHeld[soundName] = false;
+			});
+			button.addEventListener("touchdown", function(event) {
+				isHeld[soundName] = true;
+				pressed(audio);
+				added(soundName);
+			});
+			button.addEventListener("touchup", function(event) {
+				isHeld[soundName] = false;
+			});
+
+			var body = document.getElementById("sample-sidebar");
+
+			body.appendChild(audio);
+			body.appendChild(button);
+
+		}
+
+		var startButton = document.getElementById("start");
+		startButton.addEventListener("click", function(event) {
+			if(playLoopId == 0){
+				loopDuration = parseInt(document.getElementById("loop-duration").value);
+				loopSteps = parseInt(document.getElementById("loop-steps").value);
+				musicLoop();
+				canvasResize();
+			}
+		});
+		var stopButton = document.getElementById("stop");
+		stopButton.addEventListener("click", function(event) {
+			clearTimeout(playLoopId);
+			playLoopId = 0;
+			for(var index in channelIds) {
+				clearTimeout(channelIds[index]);
+			}
+			canvasResize();
+		});
+
+		var demoButton = document.getElementById("demo");
+		demoButton.addEventListener("click", function(event) {
+			document.getElementById("stop").click();
+
+
+			document.getElementById("loop-duration").value = 8000;
+			document.getElementById("loop-steps").value = 125;
+			barNotes = ["8-Bit Kit Volume1/Kick 001.wav", "8-Bit Kit Volume1/Kick 002.wav", "8-Bit Kit Volume1/Snare 001.wav", "8-Bit Kit Volume1/Synth 001.wav"];
+			bar = {
+				"0": [0],
+				"4": [1],
+				//"6": [2],
+				"8": [0],
+				"12": [1],
+				//"14": [2],
+				"16": [0],
+				"20": [1],
+				//"22": [2],
+				"24": [0],
+				"28": [1],
+				"30": [2],
+				"32": [0],
+				"36": [1],
+				"38": [2],
+				"40": [0],
+				"44": [1],
+				"46": [2],
+				"48": [0],
+				"52": [1],
+				"53": [3],
+				"54": [2, 3],
+				"55": [3],
+				"56": [0,3],
+				"57": [3],
+				"58": [3],
+				"59": [3],
+				"60": [1, 3],
+			};
+
+			document.getElementById("start").click();
+		});
+
+		var resetButton = document.getElementById("reset");
+		resetButton.addEventListener("click", function(event) {
+			barNotes = [];
+			bar = {};
+			canvasResize();
+			lastPosition = 0;
+			var container = document.getElementsByClassName("timeline-container")[0];
+			container.scrollTo(0, 0);
+		});
+
+		var importButton = document.getElementById("import");
+		importButton.addEventListener("click", function(event) {
+			var data = prompt("Please paste your import code");
+			var json = atob(data);
+			var importData = JSON.parse(json);
+			barNotes = importData.notes;
+			bar = importData.bar;
+			canvasResize();
+			lastPosition = 0;
+			var container = document.getElementsByClassName("timeline-container")[0];
+			container.scrollTo(0, 0);
+		});
+
+		var exportButton = document.getElementById("export");
+		exportButton.addEventListener("click", function(event) {
+			var exportData = {};
+			exportData.bar = bar;
+			exportData.notes = barNotes;
+			var json = JSON.stringify(exportData);
+			prompt("Export code", btoa(json));
+		});
+
+		canvasResize();
+	});
+
+	function musicLoop() {
+		channelIds = [];
+		loopStartTimestamp = new Date().getTime();
+		
+
+		for(let key in bar) {
+			var timeToPlay = loopSteps * parseInt(key);
+			if(timeToPlay <= loopDuration) {
+				channelIds.push(setTimeout(function() { playBar(bar[key]); }, timeToPlay));
+			}
+		}
+
+		playLoopId = setTimeout(musicLoop, loopDuration);
+	}
+
+	function playBar(notes) {
+		for(var index in notes) {
+			var audio = document.getElementById("audio-" + barNotes[notes[index]]);
+			pressed(audio);
+		}
+	}
+
+	function canvasResize() {
+		var container = document.getElementsByClassName("timeline-container")[0];
+		canvas.width = Math.min(Math.floor(64 * loopSteps), Math.floor(64 * (loopDuration / loopSteps)));
+		canvas.height = container.offsetHeight;
+		var context = canvas.getContext("2d");
+		context.translate(0.5, 0.5);
+
+		draw();
+	}
+	
+	function randomColor(index) {
+		return ["red", "orange", "yellow", "green", "blue", "indigo", "violet"][index%7];
+	}
+
+	window.addEventListener("resize", canvasResize);
+
+	
+
+	function draw() {
+
+		context.strokeStyle = null;
+		context.fillStyle = "#a3a3a3";
+
+		context.beginPath();
+		context.rect(0, 0, canvas.width, canvas.height);
+		context.fill();
+
+		var stepRatio = loopDuration / loopSteps;
+		var canvasRatio = canvas.width / stepRatio;
+
+		context.strokeStyle = "#8A8A8A";
+		context.lineWidth = 1;
+
+		for(var i = 0; i < stepRatio; i++) {
+			context.beginPath();
+			context.moveTo(canvasRatio * i, 0);
+			context.lineTo(canvasRatio * i, canvas.height);
+			context.stroke();
+		}
+
+		for(var timeslot in bar) {
+			for(var noteIndex in bar[timeslot]) {
+				context.beginPath();
+				context.fillStyle = randomColor(bar[timeslot][noteIndex]);
+				context.rect(canvasRatio * parseInt(timeslot), 20 * bar[timeslot][noteIndex], canvasRatio, 20);
+				
+				context.fill();
+			}
+		}
+
+		if(playLoopId != 0) {
+			var delta = new Date().getTime() - loopStartTimestamp;
+			var percentage = delta / loopDuration;
+			lastPosition = canvas.width * percentage;
+			var container = document.getElementsByClassName("timeline-container")[0];
+			container.scrollTo(Math.floor((canvas.width * percentage) - 200), 0);
+		}
+
+		context.strokeStyle = "#8ADDDD";
+		context.lineWidth = 3;
+		context.beginPath();
+		context.moveTo(lastPosition, 0);
+		context.lineTo(lastPosition, canvas.height);
+		context.stroke();
+	}
+
+	function raf() {
+		draw();
+		requestAnimationFrame(raf);
+	}
+	requestAnimationFrame(raf);
+</script>
+</body>
+</html>
